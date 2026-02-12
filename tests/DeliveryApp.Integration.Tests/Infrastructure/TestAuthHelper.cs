@@ -8,7 +8,7 @@ namespace DeliveryApp.Integration.Tests.Infrastructure;
 
 public static class TestAuthHelper
 {
-    private const string Key = "YourSuperSecretKeyThatIsAtLeast32CharactersLong!";
+    private const string Key = "DevOnlySuperSecretKeyThatIsAtLeast32CharactersLong!";
     private const string Issuer = "DeliveryApp";
     private const string Audience = "DeliveryApp";
 
