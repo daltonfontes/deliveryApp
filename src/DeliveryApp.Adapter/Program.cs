@@ -61,3 +61,5 @@ app.MapDeliveryDriverEndpoints();
 app.MapOrderEndpoints();
 
 await app.RunAsync();
+
+public partial class Program;
