@@ -45,6 +45,13 @@ public class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Exception
                 Detail = ex.Message,
                 Type = "https://tools.ietf.org/html/rfc9110#section-15.5.2"
             },
+            ForbiddenException ex => new ProblemDetails
+            {
+                Status = StatusCodes.Status403Forbidden,
+                Title = "Forbidden",
+                Detail = ex.Message,
+                Type = "https://tools.ietf.org/html/rfc9110#section-15.5.4"
+            },
             DbUpdateException ex when IsUniqueConstraintViolation(ex) => new ProblemDetails
             {
                 Status = StatusCodes.Status409Conflict,
