@@ -1,22 +1,29 @@
 namespace DeliveryApp.Application.Services;
 
+using System.Security.Claims;
 using DeliveryApp.Application.DTOs.Orders;
 using DeliveryApp.Application.Interfaces;
 using DeliveryApp.Application.Mappers;
 using DeliveryApp.Domain.Entities;
 using DeliveryApp.Domain.Exceptions;
 using DeliveryApp.Domain.Interfaces;
+using Microsoft.AspNetCore.Http;
 
 public class OrderService(
     IOrderRepository orderRepository,
     ICustomerRepository customerRepository,
     IProductRepository productRepository,
-    IDeliveryDriverRepository driverRepository) : IOrderService
+    IDeliveryDriverRepository driverRepository,
+    IHttpContextAccessor httpContextAccessor) : IOrderService
 {
     public async Task<OrderResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var order = await orderRepository.GetOrderWithDetailsAsync(id, cancellationToken);
-        return order is null ? null : OrderMapper.MapToResponse(order);
+        if (order is null) return null;
+
+        await AuthorizeOrderAccessAsync(order);
+
+        return OrderMapper.MapToResponse(order);
     }
 
     public async Task<IEnumerable<OrderResponse>> GetAllAsync(CancellationToken cancellationToken = default)
@@ -27,6 +34,8 @@ public class OrderService(
 
     public async Task<IEnumerable<OrderResponse>> GetByCustomerIdAsync(Guid customerId, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCustomerAccessAsync(customerId);
+
         var orders = await orderRepository.GetOrdersByCustomerIdAsync(customerId, cancellationToken);
         return orders.Select(OrderMapper.MapToResponse);
     }
@@ -119,33 +128,61 @@ public class OrderService(
     }
 
     private async Task<Customer> ValidateCustomerAsync(Guid customerId, CancellationToken cancellationToken)
+        => await customerRepository.GetByIdAsync(customerId, cancellationToken)
+            ?? throw new NotFoundException("Customer", customerId);
+
+    private async Task<List<OrderItem>> CreateOrderItemsAsync(IEnumerable<OrderItemRequest> itemRequests, CancellationToken cancellationToken)
     {
-        var customer = await customerRepository.GetByIdAsync(customerId, cancellationToken);
-        if (customer is null)
-            throw new NotFoundException("Customer", customerId);
+        var requests = itemRequests.ToList();
+        var productIds = requests.Select(r => r.ProductId);
+        var products = (await productRepository.GetIdsAsync(productIds, cancellationToken))
+            .ToDictionary(p => p.Id);
 
-        return customer;
-    }
-
-    private async Task<List<OrderItem>> CreateOrderItemsAsync(
-        IEnumerable<OrderItemRequest> itemRequests,
-        CancellationToken cancellationToken)
-    {
-        var product = await productRepository.GetIdsAsync(itemRequests.Select(i => i.ProductId), cancellationToken);
-        var productDict = product.ToDictionary(p => p.Id);
-
-        return itemRequests.Select(item =>
+        var orderItems = new List<OrderItem>();
+        foreach (var itemRequest in requests)
         {
-            if (!productDict.TryGetValue(item.ProductId, out var product))
-                throw new NotFoundException("Product", item.ProductId);
+            if (!products.TryGetValue(itemRequest.ProductId, out var product))
+                throw new NotFoundException("Product", itemRequest.ProductId);
 
-            return new OrderItem
+            orderItems.Add(new OrderItem
             {
                 Id = Guid.NewGuid(),
-                ProductId = item.ProductId,
-                Quantity = item.Quantity,
+                ProductId = product.Id,
+                Quantity = itemRequest.Quantity,
                 UnitPrice = product.Price
-            };
-        }).ToList();
+            });
+        }
+        return orderItems;
     }
+
+    private async Task AuthorizeOrderAccessAsync(Order order)
+    {
+        var user = httpContextAccessor.HttpContext?.User;
+        if (user is null) throw new ForbiddenException();
+
+        if (user.IsInRole("Admin")) return;
+
+        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null) throw new ForbiddenException();
+
+        var customer = await customerRepository.GetByUserIdAsync(userId);
+        if (customer is null || customer.Id != order.CustomerId)
+            throw new ForbiddenException();
+    }
+
+    private async Task AuthorizeCustomerAccessAsync(Guid customerId)
+    {
+        var user = httpContextAccessor.HttpContext?.User;
+        if (user is null) throw new ForbiddenException();
+
+        if (user.IsInRole("Admin")) return;
+
+        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null) throw new ForbiddenException();
+
+        var customer = await customerRepository.GetByUserIdAsync(userId);
+        if (customer is null || customer.Id != customerId)
+            throw new ForbiddenException();
+    }
+
 }

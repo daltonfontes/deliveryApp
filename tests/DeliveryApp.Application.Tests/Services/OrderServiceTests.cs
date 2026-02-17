@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using DeliveryApp.Application.DTOs.Orders;
 using DeliveryApp.Application.Services;
 using DeliveryApp.Domain.Entities;
@@ -5,6 +6,7 @@ using DeliveryApp.Domain.Enums;
 using DeliveryApp.Domain.Exceptions;
 using DeliveryApp.Domain.Interfaces;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Moq;
 
 namespace DeliveryApp.Application.Tests.Services;
@@ -15,15 +17,27 @@ public class OrderServiceTests
     private readonly Mock<ICustomerRepository> _customerRepoMock = new();
     private readonly Mock<IProductRepository> _productRepoMock = new();
     private readonly Mock<IDeliveryDriverRepository> _driverRepoMock = new();
+    private readonly Mock<IHttpContextAccessor> _httpContextAccessorMock = new();
     private readonly OrderService _sut;
 
     public OrderServiceTests()
     {
+        SetupAdminContext();
         _sut = new OrderService(
             _orderRepoMock.Object,
             _customerRepoMock.Object,
             _productRepoMock.Object,
-            _driverRepoMock.Object);
+            _driverRepoMock.Object,
+            _httpContextAccessorMock.Object);
+    }
+
+    private void SetupAdminContext(string userId = "admin-user-id")
+    {
+        var claims = new[] { new Claim(ClaimTypes.NameIdentifier, userId), new Claim(ClaimTypes.Role, "Admin") };
+        var identity = new ClaimsIdentity(claims, "Test");
+        var claimsPrincipal = new ClaimsPrincipal(identity);
+        var httpContext = new DefaultHttpContext { User = claimsPrincipal };
+        _httpContextAccessorMock.Setup(x => x.HttpContext).Returns(httpContext);
     }
 
     private static Customer CreateCustomer() =>

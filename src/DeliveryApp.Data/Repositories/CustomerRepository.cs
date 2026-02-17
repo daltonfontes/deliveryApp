@@ -10,4 +10,8 @@ public class CustomerRepository(DeliveryAppDbContext context) : Repository<Custo
     public async Task<Customer?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
         => await DbSet.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Email == email, cancellationToken);
+
+    public async Task<Customer?> GetByUserIdAsync(string userId, CancellationToken cancellationToken = default)
+        => await DbSet.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.UserId == userId, cancellationToken);
 }
