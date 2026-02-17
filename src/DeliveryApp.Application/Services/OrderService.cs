@@ -133,11 +133,16 @@ public class OrderService(
 
     private async Task<List<OrderItem>> CreateOrderItemsAsync(IEnumerable<OrderItemRequest> itemRequests, CancellationToken cancellationToken)
     {
+        var requests = itemRequests.ToList();
+        var productIds = requests.Select(r => r.ProductId);
+        var products = (await productRepository.GetIdsAsync(productIds, cancellationToken))
+            .ToDictionary(p => p.Id);
+
         var orderItems = new List<OrderItem>();
-        foreach (var itemRequest in itemRequests)
+        foreach (var itemRequest in requests)
         {
-            var product = await productRepository.GetByIdAsync(itemRequest.ProductId, cancellationToken)
-                ?? throw new NotFoundException("Product", itemRequest.ProductId);
+            if (!products.TryGetValue(itemRequest.ProductId, out var product))
+                throw new NotFoundException("Product", itemRequest.ProductId);
 
             orderItems.Add(new OrderItem
             {
