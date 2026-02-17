@@ -26,11 +26,8 @@ public class OrderServiceTests
             _driverRepoMock.Object);
     }
 
-    private static Customer CreateCustomer() => new()
-    {
-        Id = Guid.NewGuid(), Name = "João", Email = "joao@test.com",
-        Phone = "11999999999", Address = "Rua A", CreatedAt = DateTime.UtcNow
-    };
+    private static Customer CreateCustomer() =>
+        Customer.Create("João", "joao@test.com", "11999999999", "Rua A");
 
     private static Product CreateProduct(decimal price = 25.00m) => new()
     {
