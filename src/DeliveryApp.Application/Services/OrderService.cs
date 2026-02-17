@@ -1,21 +1,28 @@
 namespace DeliveryApp.Application.Services;
 
+using System.Security.Claims;
 using DeliveryApp.Application.DTOs.Orders;
 using DeliveryApp.Application.Interfaces;
 using DeliveryApp.Domain.Entities;
 using DeliveryApp.Domain.Exceptions;
 using DeliveryApp.Domain.Interfaces;
+using Microsoft.AspNetCore.Http;
 
 public class OrderService(
     IOrderRepository orderRepository,
     ICustomerRepository customerRepository,
     IProductRepository productRepository,
-    IDeliveryDriverRepository driverRepository) : IOrderService
+    IDeliveryDriverRepository driverRepository,
+    IHttpContextAccessor httpContextAccessor) : IOrderService
 {
     public async Task<OrderResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var order = await orderRepository.GetOrderWithDetailsAsync(id, cancellationToken);
-        return order is null ? null : MapToResponse(order);
+        if (order is null) return null;
+
+        await AuthorizeOrderAccessAsync(order);
+
+        return MapToResponse(order);
     }
 
     public async Task<IEnumerable<OrderResponse>> GetAllAsync(CancellationToken cancellationToken = default)
@@ -26,6 +33,8 @@ public class OrderService(
 
     public async Task<IEnumerable<OrderResponse>> GetByCustomerIdAsync(Guid customerId, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCustomerAccessAsync(customerId);
+
         var orders = await orderRepository.GetOrdersByCustomerIdAsync(customerId, cancellationToken);
         return orders.Select(MapToResponse);
     }
@@ -105,6 +114,36 @@ public class OrderService(
 
         await orderRepository.DeleteAsync(order, cancellationToken);
         await orderRepository.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task AuthorizeOrderAccessAsync(Order order)
+    {
+        var user = httpContextAccessor.HttpContext?.User;
+        if (user is null) throw new ForbiddenException();
+
+        if (user.IsInRole("Admin")) return;
+
+        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null) throw new ForbiddenException();
+
+        var customer = await customerRepository.GetByUserIdAsync(userId);
+        if (customer is null || customer.Id != order.CustomerId)
+            throw new ForbiddenException();
+    }
+
+    private async Task AuthorizeCustomerAccessAsync(Guid customerId)
+    {
+        var user = httpContextAccessor.HttpContext?.User;
+        if (user is null) throw new ForbiddenException();
+
+        if (user.IsInRole("Admin")) return;
+
+        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null) throw new ForbiddenException();
+
+        var customer = await customerRepository.GetByUserIdAsync(userId);
+        if (customer is null || customer.Id != customerId)
+            throw new ForbiddenException();
     }
 
     private static OrderResponse MapToResponse(Order o) =>

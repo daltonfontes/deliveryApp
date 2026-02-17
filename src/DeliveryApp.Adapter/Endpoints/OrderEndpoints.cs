@@ -15,10 +15,10 @@ public static class OrderEndpoints
         group.MapGet("/{id:guid}", async (Guid id, IOrderService service, CancellationToken ct) =>
             await service.GetByIdAsync(id, ct) is { } order
                 ? Results.Ok(order)
-                : Results.NotFound()).RequireAuthorization();
+                : Results.NotFound()).RequireAuthorization("OrderOwnerOrAdmin");
 
         group.MapGet("/customer/{customerId:guid}", async (Guid customerId, IOrderService service, CancellationToken ct) =>
-            Results.Ok(await service.GetByCustomerIdAsync(customerId, ct))).RequireAuthorization();
+            Results.Ok(await service.GetByCustomerIdAsync(customerId, ct))).RequireAuthorization("OrderOwnerOrAdmin");
 
         group.MapPost("/", async (CreateOrderRequest request, IOrderService service, CancellationToken ct) =>
         {

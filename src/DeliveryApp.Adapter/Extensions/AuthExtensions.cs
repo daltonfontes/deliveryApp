@@ -1,10 +1,12 @@
 
 using System.Text;
+using DeliveryApp.Adapter.Authorization;
 using DeliveryApp.Application.Interfaces;
 using DeliveryApp.Data.Context;
 using DeliveryApp.Data.Identity;
 using DeliveryApp.Data.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 
@@ -47,8 +49,13 @@ public static class AuthExtensions
 
         services.AddAuthorizationBuilder()
             .AddPolicy("Admin", policy => policy.RequireRole("Admin"))
-            .AddPolicy("Customer", policy => policy.RequireRole("Customer"));
+            .AddPolicy("Customer", policy => policy.RequireRole("Customer"))
+            .AddPolicy("OrderOwnerOrAdmin", policy =>
+                policy.RequireAuthenticatedUser()
+                      .RequireRole("Admin", "Customer"));
 
+        services.AddScoped<IAuthorizationHandler, OrderOwnerAuthorizationHandler>();
+        services.AddHttpContextAccessor();
         services.AddScoped<IAuthService, AuthService>();
 
         return services;
