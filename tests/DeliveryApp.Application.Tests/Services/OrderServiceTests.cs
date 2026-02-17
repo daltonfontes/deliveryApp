@@ -44,19 +44,25 @@ public class OrderServiceTests
         VehicleType = VehicleType.Motorcycle, IsAvailable = true, CreatedAt = DateTime.UtcNow
     };
 
-    private static Order CreateOrder(Guid? customerId = null) => new()
+    private static Order CreateOrder(Guid? customerId = null)
+        => Order.Create(
+            customerId ?? Guid.NewGuid(),
+            "Rua A, 123",
+            new List<OrderItem>
+            {
+                new() { Id = Guid.NewGuid(), ProductId = Guid.NewGuid(), Quantity = 2, UnitPrice = 25.00m }
+            });
+
+    private static Order CreateOrderInStatus(OrderStatus status, Guid? customerId = null)
     {
-        Id = Guid.NewGuid(),
-        CustomerId = customerId ?? Guid.NewGuid(),
-        Status = OrderStatus.Pending,
-        TotalAmount = 50.00m,
-        DeliveryAddress = "Rua A, 123",
-        CreatedAt = DateTime.UtcNow,
-        Items = new List<OrderItem>
-        {
-            new() { Id = Guid.NewGuid(), ProductId = Guid.NewGuid(), Quantity = 2, UnitPrice = 25.00m }
-        }
-    };
+        var order = CreateOrder(customerId);
+        if (status >= OrderStatus.Confirmed) order.Pay();
+        if (status >= OrderStatus.Preparing) order.Prepare();
+        if (status >= OrderStatus.Shipped)   order.Ship(Guid.NewGuid());
+        return order;
+    }
+
+    // ─── GET ─────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task GetByIdAsync_ReturnsResponse_WhenOrderExists()
@@ -103,6 +109,8 @@ public class OrderServiceTests
         result.Should().HaveCount(1);
     }
 
+    // ─── CREATE ──────────────────────────────────────────────────────────────
+
     [Fact]
     public async Task CreateAsync_CreatesOrder_WithValidData()
     {
@@ -110,15 +118,13 @@ public class OrderServiceTests
         var product = CreateProduct(30.00m);
 
         _customerRepoMock.Setup(r => r.GetByIdAsync(customer.Id, default)).ReturnsAsync(customer);
-        _productRepoMock.Setup(r => r.GetByIdAsync(product.Id, default)).ReturnsAsync(product);
+        _productRepoMock.Setup(r => r.GetIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync(new List<Product> { product });
 
         var createdOrder = CreateOrder(customer.Id);
         _orderRepoMock.Setup(r => r.GetOrderWithDetailsAsync(It.IsAny<Guid>(), default)).ReturnsAsync(createdOrder);
 
-        var request = new CreateOrderRequest(customer.Id, "Rua B, 456", new List<OrderItemRequest>
-        {
-            new(product.Id, 2)
-        });
+        var request = new CreateOrderRequest(customer.Id, "Rua B, 456", new List<OrderItemRequest> { new(product.Id, 2) });
 
         var result = await _sut.CreateAsync(request);
 
@@ -132,10 +138,7 @@ public class OrderServiceTests
     {
         _customerRepoMock.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), default)).ReturnsAsync((Customer?)null);
 
-        var request = new CreateOrderRequest(Guid.NewGuid(), "Rua X", new List<OrderItemRequest>
-        {
-            new(Guid.NewGuid(), 1)
-        });
+        var request = new CreateOrderRequest(Guid.NewGuid(), "Rua X", new List<OrderItemRequest> { new(Guid.NewGuid(), 1) });
 
         var act = () => _sut.CreateAsync(request);
 
@@ -147,12 +150,10 @@ public class OrderServiceTests
     {
         var customer = CreateCustomer();
         _customerRepoMock.Setup(r => r.GetByIdAsync(customer.Id, default)).ReturnsAsync(customer);
-        _productRepoMock.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), default)).ReturnsAsync((Product?)null);
+        _productRepoMock.Setup(r => r.GetIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync(new List<Product>());
 
-        var request = new CreateOrderRequest(customer.Id, "Rua X", new List<OrderItemRequest>
-        {
-            new(Guid.NewGuid(), 1)
-        });
+        var request = new CreateOrderRequest(customer.Id, "Rua X", new List<OrderItemRequest> { new(Guid.NewGuid(), 1) });
 
         var act = () => _sut.CreateAsync(request);
 
@@ -167,8 +168,8 @@ public class OrderServiceTests
         var product2 = CreateProduct(20.00m);
 
         _customerRepoMock.Setup(r => r.GetByIdAsync(customer.Id, default)).ReturnsAsync(customer);
-        _productRepoMock.Setup(r => r.GetByIdAsync(product1.Id, default)).ReturnsAsync(product1);
-        _productRepoMock.Setup(r => r.GetByIdAsync(product2.Id, default)).ReturnsAsync(product2);
+        _productRepoMock.Setup(r => r.GetIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync(new List<Product> { product1, product2 });
 
         Order? capturedOrder = null;
         _orderRepoMock.Setup(r => r.AddAsync(It.IsAny<Order>(), default))
@@ -189,53 +190,142 @@ public class OrderServiceTests
         capturedOrder!.TotalAmount.Should().Be(70.00m);
     }
 
+    // ─── PAY ─────────────────────────────────────────────────────────────────
+
     [Fact]
-    public async Task UpdateStatusAsync_UpdatesStatus_WhenOrderExists()
+    public async Task PayOrderAsync_ConfirmsOrder_WhenOrderExists()
     {
         var order = CreateOrder();
         _orderRepoMock.Setup(r => r.GetOrderWithDetailsAsync(order.Id, default)).ReturnsAsync(order);
 
-        var result = await _sut.UpdateStatusAsync(order.Id, new UpdateOrderStatusRequest(OrderStatus.Confirmed));
+        var result = await _sut.PayOrderAsync(order.Id);
 
         result.Status.Should().Be(OrderStatus.Confirmed);
         _orderRepoMock.Verify(r => r.SaveChangesAsync(default), Times.Once);
     }
 
     [Fact]
-    public async Task UpdateStatusAsync_ThrowsNotFoundException_WhenOrderDoesNotExist()
+    public async Task PayOrderAsync_ThrowsNotFoundException_WhenOrderDoesNotExist()
     {
         _orderRepoMock.Setup(r => r.GetOrderWithDetailsAsync(It.IsAny<Guid>(), default)).ReturnsAsync((Order?)null);
 
-        var act = () => _sut.UpdateStatusAsync(Guid.NewGuid(), new UpdateOrderStatusRequest(OrderStatus.Confirmed));
+        var act = () => _sut.PayOrderAsync(Guid.NewGuid());
 
         await act.Should().ThrowAsync<NotFoundException>();
     }
 
+    // ─── PREPARE ─────────────────────────────────────────────────────────────
+
     [Fact]
-    public async Task AssignDriverAsync_AssignsDriver_WhenBothExist()
+    public async Task PrepareOrderAsync_PreparesOrder_WhenOrderIsConfirmed()
     {
-        var order = CreateOrder();
+        var order = CreateOrderInStatus(OrderStatus.Confirmed);
+        _orderRepoMock.Setup(r => r.GetOrderWithDetailsAsync(order.Id, default)).ReturnsAsync(order);
+
+        var result = await _sut.PrepareOrderAsync(order.Id);
+
+        result.Status.Should().Be(OrderStatus.Preparing);
+        _orderRepoMock.Verify(r => r.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task PrepareOrderAsync_ThrowsNotFoundException_WhenOrderDoesNotExist()
+    {
+        _orderRepoMock.Setup(r => r.GetOrderWithDetailsAsync(It.IsAny<Guid>(), default)).ReturnsAsync((Order?)null);
+
+        var act = () => _sut.PrepareOrderAsync(Guid.NewGuid());
+
+        await act.Should().ThrowAsync<NotFoundException>();
+    }
+
+    // ─── SHIP ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ShipOrderAsync_ShipsOrder_WhenBothExist()
+    {
+        var order = CreateOrderInStatus(OrderStatus.Preparing);
         var driver = CreateDriver();
         _orderRepoMock.Setup(r => r.GetOrderWithDetailsAsync(order.Id, default)).ReturnsAsync(order);
         _driverRepoMock.Setup(r => r.GetByIdAsync(driver.Id, default)).ReturnsAsync(driver);
 
-        var result = await _sut.AssignDriverAsync(order.Id, new AssignDriverRequest(driver.Id));
+        var result = await _sut.ShipOrderAsync(order.Id, new ShipOrderRequest(driver.Id));
 
+        result.Status.Should().Be(OrderStatus.Shipped);
         result.DeliveryDriverId.Should().Be(driver.Id);
         _orderRepoMock.Verify(r => r.SaveChangesAsync(default), Times.Once);
     }
 
     [Fact]
-    public async Task AssignDriverAsync_ThrowsNotFoundException_WhenDriverDoesNotExist()
+    public async Task ShipOrderAsync_ThrowsNotFoundException_WhenOrderDoesNotExist()
     {
-        var order = CreateOrder();
+        _orderRepoMock.Setup(r => r.GetOrderWithDetailsAsync(It.IsAny<Guid>(), default)).ReturnsAsync((Order?)null);
+
+        var act = () => _sut.ShipOrderAsync(Guid.NewGuid(), new ShipOrderRequest(Guid.NewGuid()));
+
+        await act.Should().ThrowAsync<NotFoundException>().WithMessage("*Order*");
+    }
+
+    [Fact]
+    public async Task ShipOrderAsync_ThrowsNotFoundException_WhenDriverDoesNotExist()
+    {
+        var order = CreateOrderInStatus(OrderStatus.Preparing);
         _orderRepoMock.Setup(r => r.GetOrderWithDetailsAsync(order.Id, default)).ReturnsAsync(order);
         _driverRepoMock.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), default)).ReturnsAsync((DeliveryDriver?)null);
 
-        var act = () => _sut.AssignDriverAsync(order.Id, new AssignDriverRequest(Guid.NewGuid()));
+        var act = () => _sut.ShipOrderAsync(order.Id, new ShipOrderRequest(Guid.NewGuid()));
 
         await act.Should().ThrowAsync<NotFoundException>().WithMessage("*DeliveryDriver*");
     }
+
+    // ─── DELIVER ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task DeliverOrderAsync_DeliversOrder_WhenOrderIsShipped()
+    {
+        var order = CreateOrderInStatus(OrderStatus.Shipped);
+        _orderRepoMock.Setup(r => r.GetOrderWithDetailsAsync(order.Id, default)).ReturnsAsync(order);
+
+        var result = await _sut.DeliverOrderAsync(order.Id);
+
+        result.Status.Should().Be(OrderStatus.Delivered);
+        _orderRepoMock.Verify(r => r.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeliverOrderAsync_ThrowsNotFoundException_WhenOrderDoesNotExist()
+    {
+        _orderRepoMock.Setup(r => r.GetOrderWithDetailsAsync(It.IsAny<Guid>(), default)).ReturnsAsync((Order?)null);
+
+        var act = () => _sut.DeliverOrderAsync(Guid.NewGuid());
+
+        await act.Should().ThrowAsync<NotFoundException>();
+    }
+
+    // ─── CANCEL ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CancelOrderAsync_CancelsOrder_WhenOrderIsPending()
+    {
+        var order = CreateOrder();
+        _orderRepoMock.Setup(r => r.GetOrderWithDetailsAsync(order.Id, default)).ReturnsAsync(order);
+
+        var result = await _sut.CancelOrderAsync(order.Id);
+
+        result.Status.Should().Be(OrderStatus.Cancelled);
+        _orderRepoMock.Verify(r => r.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task CancelOrderAsync_ThrowsNotFoundException_WhenOrderDoesNotExist()
+    {
+        _orderRepoMock.Setup(r => r.GetOrderWithDetailsAsync(It.IsAny<Guid>(), default)).ReturnsAsync((Order?)null);
+
+        var act = () => _sut.CancelOrderAsync(Guid.NewGuid());
+
+        await act.Should().ThrowAsync<NotFoundException>();
+    }
+
+    // ─── DELETE ──────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task DeleteAsync_ThrowsNotFoundException_WhenOrderDoesNotExist()

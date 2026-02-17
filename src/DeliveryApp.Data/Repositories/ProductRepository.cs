@@ -22,4 +22,9 @@ public class ProductRepository(DeliveryAppDbContext context) : Repository<Produc
             .Where(p => p.IsActive)
             .OrderBy(p => p.Name)
             .ToListAsync(cancellationToken);
+
+    public async Task<IEnumerable<Product>> GetIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+        => await DbSet.AsNoTracking()
+            .Where(p => ids.Contains(p.Id))
+            .ToListAsync(cancellationToken);
 }
