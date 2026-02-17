@@ -23,7 +23,7 @@ public class OrderService(
 
         await AuthorizeOrderAccessAsync(order);
 
-        return MapToResponse(order);
+        return OrderMapper.MapToResponse(order);
     }
 
     public async Task<IEnumerable<OrderResponse>> GetAllAsync(CancellationToken cancellationToken = default)
@@ -127,6 +127,29 @@ public class OrderService(
         return OrderMapper.MapToResponse(order);
     }
 
+    private async Task<Customer> ValidateCustomerAsync(Guid customerId, CancellationToken cancellationToken)
+        => await customerRepository.GetByIdAsync(customerId, cancellationToken)
+            ?? throw new NotFoundException("Customer", customerId);
+
+    private async Task<List<OrderItem>> CreateOrderItemsAsync(IEnumerable<OrderItemRequest> itemRequests, CancellationToken cancellationToken)
+    {
+        var orderItems = new List<OrderItem>();
+        foreach (var itemRequest in itemRequests)
+        {
+            var product = await productRepository.GetByIdAsync(itemRequest.ProductId, cancellationToken)
+                ?? throw new NotFoundException("Product", itemRequest.ProductId);
+
+            orderItems.Add(new OrderItem
+            {
+                Id = Guid.NewGuid(),
+                ProductId = product.Id,
+                Quantity = itemRequest.Quantity,
+                UnitPrice = product.Price
+            });
+        }
+        return orderItems;
+    }
+
     private async Task AuthorizeOrderAccessAsync(Order order)
     {
         var user = httpContextAccessor.HttpContext?.User;
@@ -157,22 +180,4 @@ public class OrderService(
             throw new ForbiddenException();
     }
 
-    private static OrderResponse MapToResponse(Order o) =>
-        new(
-            o.Id,
-            o.CustomerId,
-            o.Customer?.Name ?? string.Empty,
-            o.DeliveryDriverId,
-            o.DeliveryDriver?.Name,
-            o.Status,
-            o.TotalAmount,
-            o.DeliveryAddress,
-            o.CreatedAt,
-            o.UpdatedAt,
-            o.Items.Select(i => new OrderItemResponse(
-                i.Id,
-                i.ProductId,
-                i.Product?.Name ?? string.Empty,
-                i.Quantity,
-                i.UnitPrice)).ToList());
 }
