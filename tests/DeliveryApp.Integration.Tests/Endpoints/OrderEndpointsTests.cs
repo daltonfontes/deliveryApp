@@ -15,19 +15,21 @@ public class OrderEndpointsTests : IClassFixture<CustomWebApplicationFactory>
 {
     private readonly CustomWebApplicationFactory _factory;
     private readonly HttpClient _adminClient;
+    private readonly HttpClient _customerClient;
     private readonly HttpClient _unauthClient;
 
     public OrderEndpointsTests(CustomWebApplicationFactory factory)
     {
         _factory = factory;
         _adminClient = TestAuthHelper.CreateAuthenticatedClient(factory, "Admin");
+        _customerClient = TestAuthHelper.CreateAuthenticatedClient(factory, "Customer");
         _unauthClient = factory.CreateClient();
     }
 
     private async Task<Guid> CreateCustomerAsync()
     {
         var response = await _adminClient.PostAsJsonAsync("/api/customers",
-            new CreateCustomerRequest("Order Customer", $"oc-{Guid.NewGuid():N}@test.com"[..30], "11999999999", "Rua A"));
+            new CreateCustomerRequest("Order Customer", $"oc-{Guid.NewGuid():N}"[..30], "11999999999", "Rua A"));
         var body = await response.Content.ReadFromJsonAsync<CustomerResponse>();
         return body!.Id;
     }
@@ -56,15 +58,40 @@ public class OrderEndpointsTests : IClassFixture<CustomWebApplicationFactory>
     {
         var customerId = await CreateCustomerAsync();
         var productId = await CreateProductAsync();
-        var customerClient = TestAuthHelper.CreateAuthenticatedClient(_factory, "Customer");
 
-        var response = await customerClient.PostAsJsonAsync("/api/orders",
+        var response = await _customerClient.PostAsJsonAsync("/api/orders",
             new CreateOrderRequest(customerId, "Rua Entrega, 456", new List<OrderItemRequest>
             {
                 new(productId, 2)
             }));
         return (await response.Content.ReadFromJsonAsync<OrderResponse>())!;
     }
+
+    private async Task<OrderResponse> AdvanceOrderToStatusAsync(Guid orderId, OrderStatus targetStatus)
+    {
+        OrderResponse? result = null;
+
+        if (targetStatus >= OrderStatus.Confirmed)
+        {
+            var r = await _customerClient.PatchAsync($"/api/orders/{orderId}/pay", null);
+            result = await r.Content.ReadFromJsonAsync<OrderResponse>();
+        }
+        if (targetStatus >= OrderStatus.Preparing)
+        {
+            var r = await _adminClient.PatchAsync($"/api/orders/{orderId}/prepare", null);
+            result = await r.Content.ReadFromJsonAsync<OrderResponse>();
+        }
+        if (targetStatus >= OrderStatus.Shipped)
+        {
+            var driverId = await CreateDriverAsync();
+            var r = await _adminClient.PatchAsJsonAsync($"/api/orders/{orderId}/ship", new ShipOrderRequest(driverId));
+            result = await r.Content.ReadFromJsonAsync<OrderResponse>();
+        }
+
+        return result!;
+    }
+
+    // ─── GET ─────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task GetAll_ReturnsOk_WithAdminToken()
@@ -82,14 +109,15 @@ public class OrderEndpointsTests : IClassFixture<CustomWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    // ─── CREATE ──────────────────────────────────────────────────────────────
+
     [Fact]
     public async Task Create_Returns201_WithCustomerToken()
     {
         var customerId = await CreateCustomerAsync();
         var productId = await CreateProductAsync();
-        var customerClient = TestAuthHelper.CreateAuthenticatedClient(_factory, "Customer");
 
-        var response = await customerClient.PostAsJsonAsync("/api/orders",
+        var response = await _customerClient.PostAsJsonAsync("/api/orders",
             new CreateOrderRequest(customerId, "Rua B", new List<OrderItemRequest> { new(productId, 1) }));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -102,21 +130,21 @@ public class OrderEndpointsTests : IClassFixture<CustomWebApplicationFactory>
     public async Task Create_Returns404_WhenCustomerDoesNotExist()
     {
         var productId = await CreateProductAsync();
-        var customerClient = TestAuthHelper.CreateAuthenticatedClient(_factory, "Customer");
 
-        var response = await customerClient.PostAsJsonAsync("/api/orders",
+        var response = await _customerClient.PostAsJsonAsync("/api/orders",
             new CreateOrderRequest(Guid.NewGuid(), "Rua X", new List<OrderItemRequest> { new(productId, 1) }));
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    // ─── PAY ─────────────────────────────────────────────────────────────────
+
     [Fact]
-    public async Task UpdateStatus_ReturnsOk_WithAdminToken()
+    public async Task Pay_ReturnsOk_WithCustomerToken()
     {
         var order = await CreateOrderAsync();
 
-        var response = await _adminClient.PatchAsJsonAsync($"/api/orders/{order.Id}/status",
-            new UpdateOrderStatusRequest(OrderStatus.Confirmed));
+        var response = await _customerClient.PatchAsync($"/api/orders/{order.Id}/pay", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<OrderResponse>();
@@ -124,18 +152,100 @@ public class OrderEndpointsTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task AssignDriver_ReturnsOk_WithAdminToken()
+    public async Task Pay_Returns401_WithoutToken()
     {
         var order = await CreateOrderAsync();
-        var driverId = await CreateDriverAsync();
 
-        var response = await _adminClient.PatchAsJsonAsync($"/api/orders/{order.Id}/assign-driver",
-            new AssignDriverRequest(driverId));
+        var response = await _unauthClient.PatchAsync($"/api/orders/{order.Id}/pay", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // ─── PREPARE ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Prepare_ReturnsOk_WithAdminToken()
+    {
+        var order = await CreateOrderAsync();
+        await AdvanceOrderToStatusAsync(order.Id, OrderStatus.Confirmed);
+
+        var response = await _adminClient.PatchAsync($"/api/orders/{order.Id}/prepare", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<OrderResponse>();
-        body!.DeliveryDriverId.Should().Be(driverId);
+        body!.Status.Should().Be(OrderStatus.Preparing);
     }
+
+    // ─── SHIP ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Ship_ReturnsOk_WithAdminToken()
+    {
+        var order = await CreateOrderAsync();
+        await AdvanceOrderToStatusAsync(order.Id, OrderStatus.Preparing);
+        var driverId = await CreateDriverAsync();
+
+        var response = await _adminClient.PatchAsJsonAsync($"/api/orders/{order.Id}/ship",
+            new ShipOrderRequest(driverId));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<OrderResponse>();
+        body!.Status.Should().Be(OrderStatus.Shipped);
+        body.DeliveryDriverId.Should().Be(driverId);
+    }
+
+    [Fact]
+    public async Task Ship_Returns404_WhenDriverDoesNotExist()
+    {
+        var order = await CreateOrderAsync();
+        await AdvanceOrderToStatusAsync(order.Id, OrderStatus.Preparing);
+
+        var response = await _adminClient.PatchAsJsonAsync($"/api/orders/{order.Id}/ship",
+            new ShipOrderRequest(Guid.NewGuid()));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ─── DELIVER ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Deliver_ReturnsOk_WithAdminToken()
+    {
+        var order = await CreateOrderAsync();
+        await AdvanceOrderToStatusAsync(order.Id, OrderStatus.Shipped);
+
+        var response = await _adminClient.PatchAsync($"/api/orders/{order.Id}/deliver", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<OrderResponse>();
+        body!.Status.Should().Be(OrderStatus.Delivered);
+    }
+
+    // ─── CANCEL ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Cancel_ReturnsOk_WhenOrderIsPending()
+    {
+        var order = await CreateOrderAsync();
+
+        var response = await _customerClient.PatchAsync($"/api/orders/{order.Id}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<OrderResponse>();
+        body!.Status.Should().Be(OrderStatus.Cancelled);
+    }
+
+    [Fact]
+    public async Task Cancel_Returns401_WithoutToken()
+    {
+        var order = await CreateOrderAsync();
+
+        var response = await _unauthClient.PatchAsync($"/api/orders/{order.Id}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // ─── DELETE ──────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task Delete_Returns204_WithAdminToken()
