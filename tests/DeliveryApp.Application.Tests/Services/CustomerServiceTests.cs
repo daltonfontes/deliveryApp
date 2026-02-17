@@ -18,15 +18,8 @@ public class CustomerServiceTests
         _sut = new CustomerService(_repoMock.Object);
     }
 
-    private static Customer CreateCustomer(Guid? id = null) => new()
-    {
-        Id = id ?? Guid.NewGuid(),
-        Name = "João Silva",
-        Email = "joao@test.com",
-        Phone = "11999999999",
-        Address = "Rua A, 123",
-        CreatedAt = DateTime.UtcNow
-    };
+    private static Customer CreateCustomer() =>
+        Customer.Create("João Silva", "joao@test.com", "11999999999", "Rua A, 123");
 
     [Fact]
     public async Task GetByIdAsync_ReturnsResponse_WhenCustomerExists()
@@ -88,6 +81,7 @@ public class CustomerServiceTests
 
         result.Name.Should().Be("Novo Nome");
         result.Email.Should().Be("novo@test.com");
+        result.UpdatedAt.Should().NotBeNull();
         _repoMock.Verify(r => r.SaveChangesAsync(default), Times.Once);
     }
 

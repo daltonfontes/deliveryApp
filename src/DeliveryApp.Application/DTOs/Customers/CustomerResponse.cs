@@ -6,4 +6,5 @@ public record CustomerResponse(
     string Email,
     string Phone,
     string Address,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    DateTime? UpdatedAt);
