@@ -26,11 +26,20 @@ public static class OrderEndpoints
             return Results.Created($"/api/orders/{order.Id}", order);
         }).RequireAuthorization("Customer");
 
-        group.MapPatch("/{id:guid}/status", async (Guid id, UpdateOrderStatusRequest request, IOrderService service, CancellationToken ct) =>
-            Results.Ok(await service.UpdateStatusAsync(id, request, ct))).RequireAuthorization("Admin");
+        group.MapPatch("/{id:guid}/pay", async (Guid id, IOrderService service, CancellationToken ct) =>
+            Results.Ok(await service.PayOrderAsync(id, ct))).RequireAuthorization("Customer");
 
-        group.MapPatch("/{id:guid}/assign-driver", async (Guid id, AssignDriverRequest request, IOrderService service, CancellationToken ct) =>
-            Results.Ok(await service.AssignDriverAsync(id, request, ct))).RequireAuthorization("Admin");
+        group.MapPatch("/{id:guid}/prepare", async (Guid id, IOrderService service, CancellationToken ct) =>
+            Results.Ok(await service.PrepareOrderAsync(id, ct))).RequireAuthorization("Admin");
+
+        group.MapPatch("/{id:guid}/ship", async (Guid id, ShipOrderRequest request, IOrderService service, CancellationToken ct) =>
+            Results.Ok(await service.ShipOrderAsync(id, request, ct))).RequireAuthorization("Admin");
+
+        group.MapPatch("/{id:guid}/deliver", async (Guid id, IOrderService service, CancellationToken ct) =>
+            Results.Ok(await service.DeliverOrderAsync(id, ct))).RequireAuthorization("Admin");
+
+        group.MapPatch("/{id:guid}/cancel", async (Guid id, IOrderService service, CancellationToken ct) =>
+            Results.Ok(await service.CancelOrderAsync(id, ct))).RequireAuthorization();
 
         group.MapDelete("/{id:guid}", async (Guid id, IOrderService service, CancellationToken ct) =>
         {

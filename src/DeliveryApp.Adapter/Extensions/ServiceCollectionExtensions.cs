@@ -21,8 +21,15 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        var host = configuration["Database:Host"];
+        var port = configuration["Database:Port"];
+        var name = configuration["Database:Name"];
+        var user = configuration["Database:User"];
+        var password = configuration["Database:Password"];
+        var connectionString = $"Host={host};Port={port};Database={name};Username={user};Password={password}";
+
         services.AddDbContext<DeliveryAppDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
+            options.UseNpgsql(connectionString)
                    .UseSnakeCaseNamingConvention());
 
         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));

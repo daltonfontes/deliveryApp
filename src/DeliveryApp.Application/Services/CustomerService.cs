@@ -22,15 +22,7 @@ public class CustomerService(ICustomerRepository customerRepository) : ICustomer
 
     public async Task<CustomerResponse> CreateAsync(CreateCustomerRequest request, CancellationToken cancellationToken = default)
     {
-        var customer = new Customer
-        {
-            Id = Guid.NewGuid(),
-            Name = request.Name,
-            Email = request.Email,
-            Phone = request.Phone,
-            Address = request.Address,
-            CreatedAt = DateTime.UtcNow
-        };
+        var customer = Customer.Create(request.Name, request.Email, request.Phone, request.Address);
 
         await customerRepository.AddAsync(customer, cancellationToken);
         await customerRepository.SaveChangesAsync(cancellationToken);
@@ -42,10 +34,7 @@ public class CustomerService(ICustomerRepository customerRepository) : ICustomer
         var customer = await customerRepository.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Customer", id);
 
-        customer.Name = request.Name;
-        customer.Email = request.Email;
-        customer.Phone = request.Phone;
-        customer.Address = request.Address;
+        customer.Update(request.Name, request.Email, request.Phone, request.Address);
 
         await customerRepository.UpdateAsync(customer, cancellationToken);
         await customerRepository.SaveChangesAsync(cancellationToken);
@@ -62,5 +51,5 @@ public class CustomerService(ICustomerRepository customerRepository) : ICustomer
     }
 
     private static CustomerResponse MapToResponse(Customer c) =>
-        new(c.Id, c.Name, c.Email, c.Phone, c.Address, c.CreatedAt);
+        new(c.Id, c.Name, c.Email, c.Phone, c.Address, c.CreatedAt, c.UpdatedAt);
 }
