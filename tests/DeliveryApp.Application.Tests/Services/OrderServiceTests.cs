@@ -43,11 +43,8 @@ public class OrderServiceTests
     private static Customer CreateCustomer() =>
         Customer.Create("João", "joao@test.com", "11999999999", "Rua A");
 
-    private static Product CreateProduct(decimal price = 25.00m) => new()
-    {
-        Id = Guid.NewGuid(), Name = "Pizza", Description = "Pizza test",
-        Price = price, IsActive = true, CategoryId = Guid.NewGuid(), CreatedAt = DateTime.UtcNow
-    };
+    private static Product CreateProduct(decimal price = 25.00m)
+        => Product.Create("Pizza", "Pizza test", price, null, Guid.NewGuid());
 
     private static DeliveryDriver CreateDriver() => new()
     {
@@ -129,8 +126,7 @@ public class OrderServiceTests
         var product = CreateProduct(30.00m);
 
         _customerRepoMock.Setup(r => r.GetByIdAsync(customer.Id, default)).ReturnsAsync(customer);
-        _productRepoMock.Setup(r => r.GetIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
-            .ReturnsAsync(new List<Product> { product });
+        _productRepoMock.Setup(r => r.GetByIdAsync(product.Id, default)).ReturnsAsync(product);
 
         var createdOrder = CreateOrder(customer.Id);
         _orderRepoMock.Setup(r => r.GetOrderWithDetailsAsync(It.IsAny<Guid>(), default)).ReturnsAsync(createdOrder);
@@ -161,8 +157,7 @@ public class OrderServiceTests
     {
         var customer = CreateCustomer();
         _customerRepoMock.Setup(r => r.GetByIdAsync(customer.Id, default)).ReturnsAsync(customer);
-        _productRepoMock.Setup(r => r.GetIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
-            .ReturnsAsync(new List<Product>());
+        _productRepoMock.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), default)).ReturnsAsync((Product?)null);
 
         var request = new CreateOrderRequest(customer.Id, "Rua X", new List<OrderItemRequest> { new(Guid.NewGuid(), 1) });
 
@@ -179,8 +174,8 @@ public class OrderServiceTests
         var product2 = CreateProduct(20.00m);
 
         _customerRepoMock.Setup(r => r.GetByIdAsync(customer.Id, default)).ReturnsAsync(customer);
-        _productRepoMock.Setup(r => r.GetIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
-            .ReturnsAsync(new List<Product> { product1, product2 });
+        _productRepoMock.Setup(r => r.GetByIdAsync(product1.Id, default)).ReturnsAsync(product1);
+        _productRepoMock.Setup(r => r.GetByIdAsync(product2.Id, default)).ReturnsAsync(product2);
 
         Order? capturedOrder = null;
         _orderRepoMock.Setup(r => r.AddAsync(It.IsAny<Order>(), default))

@@ -127,6 +127,31 @@ public class OrderService(
         return OrderMapper.MapToResponse(order);
     }
 
+    private async Task<Customer> ValidateCustomerAsync(Guid customerId, CancellationToken cancellationToken)
+    {
+        return await customerRepository.GetByIdAsync(customerId, cancellationToken)
+            ?? throw new NotFoundException("Customer", customerId);
+    }
+
+    private async Task<List<OrderItem>> CreateOrderItemsAsync(List<OrderItemRequest> items, CancellationToken cancellationToken)
+    {
+        var orderItems = new List<OrderItem>();
+        foreach (var item in items)
+        {
+            var product = await productRepository.GetByIdAsync(item.ProductId, cancellationToken)
+                ?? throw new NotFoundException("Product", item.ProductId);
+
+            orderItems.Add(new OrderItem
+            {
+                Id = Guid.NewGuid(),
+                ProductId = product.Id,
+                Quantity = item.Quantity,
+                UnitPrice = product.Price
+            });
+        }
+        return orderItems;
+    }
+
     private async Task AuthorizeOrderAccessAsync(Order order)
     {
         var user = httpContextAccessor.HttpContext?.User;
