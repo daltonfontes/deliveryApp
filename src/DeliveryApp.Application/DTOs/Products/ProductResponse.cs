@@ -8,5 +8,6 @@ public record ProductResponse(
     string? ImageUrl,
     bool IsActive,
     DateTime CreatedAt,
+    DateTime? UpdatedAt,
     Guid CategoryId,
     string CategoryName);
