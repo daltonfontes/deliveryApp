@@ -18,17 +18,12 @@ public class ProductServiceTests
         _sut = new ProductService(_repoMock.Object);
     }
 
-    private static Product CreateProduct(Guid? id = null, bool isActive = true) => new()
+    private static Product CreateProduct(bool isActive = true)
     {
-        Id = id ?? Guid.NewGuid(),
-        Name = "Pizza Margherita",
-        Description = "Pizza clássica",
-        Price = 35.90m,
-        ImageUrl = "https://img.com/pizza.jpg",
-        IsActive = isActive,
-        CategoryId = Guid.NewGuid(),
-        CreatedAt = DateTime.UtcNow
-    };
+        var product = Product.Create("Pizza Margherita", "Pizza clássica", 35.90m, "https://img.com/pizza.jpg", Guid.NewGuid());
+        if (!isActive) product.Deactivate();
+        return product;
+    }
 
     [Fact]
     public async Task GetByIdAsync_ReturnsResponse_WhenProductExists()

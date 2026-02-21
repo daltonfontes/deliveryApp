@@ -128,27 +128,24 @@ public class OrderService(
     }
 
     private async Task<Customer> ValidateCustomerAsync(Guid customerId, CancellationToken cancellationToken)
-        => await customerRepository.GetByIdAsync(customerId, cancellationToken)
-            ?? throw new NotFoundException("Customer", customerId);
-
-    private async Task<List<OrderItem>> CreateOrderItemsAsync(IEnumerable<OrderItemRequest> itemRequests, CancellationToken cancellationToken)
     {
-        var requests = itemRequests.ToList();
-        var productIds = requests.Select(r => r.ProductId);
-        var products = (await productRepository.GetIdsAsync(productIds, cancellationToken))
-            .ToDictionary(p => p.Id);
+        return await customerRepository.GetByIdAsync(customerId, cancellationToken)
+            ?? throw new NotFoundException("Customer", customerId);
+    }
 
+    private async Task<List<OrderItem>> CreateOrderItemsAsync(List<OrderItemRequest> items, CancellationToken cancellationToken)
+    {
         var orderItems = new List<OrderItem>();
-        foreach (var itemRequest in requests)
+        foreach (var item in items)
         {
-            if (!products.TryGetValue(itemRequest.ProductId, out var product))
-                throw new NotFoundException("Product", itemRequest.ProductId);
+            var product = await productRepository.GetByIdAsync(item.ProductId, cancellationToken)
+                ?? throw new NotFoundException("Product", item.ProductId);
 
             orderItems.Add(new OrderItem
             {
                 Id = Guid.NewGuid(),
                 ProductId = product.Id,
-                Quantity = itemRequest.Quantity,
+                Quantity = item.Quantity,
                 UnitPrice = product.Price
             });
         }
