@@ -46,11 +46,8 @@ public class OrderServiceTests
     private static Product CreateProduct(decimal price = 25.00m)
         => Product.Create("Pizza", "Pizza test", price, null, Guid.NewGuid());
 
-    private static DeliveryDriver CreateDriver() => new()
-    {
-        Id = Guid.NewGuid(), Name = "Carlos", Phone = "11888888888",
-        VehicleType = VehicleType.Motorcycle, IsAvailable = true, CreatedAt = DateTime.UtcNow
-    };
+    private static DeliveryDriver CreateDriver() =>
+        DeliveryDriver.Create("Carlos", "11888888888", VehicleType.Motorcycle);
 
     private static Order CreateOrder(Guid? customerId = null)
         => Order.Create(
