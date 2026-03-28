@@ -19,15 +19,12 @@ public class DeliveryDriverServiceTests
         _sut = new DeliveryDriverService(_repoMock.Object);
     }
 
-    private static DeliveryDriver CreateDriver(Guid? id = null, bool isAvailable = true) => new()
+    private static DeliveryDriver CreateDriver(bool isAvailable = true)
     {
-        Id = id ?? Guid.NewGuid(),
-        Name = "Carlos Motorista",
-        Phone = "11999999999",
-        VehicleType = VehicleType.Motorcycle,
-        IsAvailable = isAvailable,
-        CreatedAt = DateTime.UtcNow
-    };
+        var driver = DeliveryDriver.Create("Carlos Motorista", "11999999999", VehicleType.Motorcycle);
+        if (!isAvailable) driver.MakeUnavailable();
+        return driver;
+    }
 
     [Fact]
     public async Task GetByIdAsync_ReturnsResponse_WhenDriverExists()
